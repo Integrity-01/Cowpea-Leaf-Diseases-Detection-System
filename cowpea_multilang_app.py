@@ -4,11 +4,12 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 from torchvision import transforms
+import io
 
 # Set device
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-# Define model class (must match training)
+# Define model class
 class CowpeaCNN(torch.nn.Module):
     def __init__(self, num_classes):
         super(CowpeaCNN, self).__init__()
@@ -53,7 +54,7 @@ model.eval()
 # Language selector
 language = st.selectbox("Choose Language / Zaɓi Yare / Yan aṣayan Ẹ̀dé", ["English", "Hausa", "Yoruba"])
 
-# Translations dictionary
+# Translations dictionary (same as original)
 translations = {
     "title": {
         "English": "Cowpea Leaf Disease Detection System",
@@ -61,7 +62,7 @@ translations = {
         "Yoruba": "Ero Asawari Àìsàn Ewé Èwà"
     },
     "upload_label": {
-        "English": "Upload a leaf image below to detect possible disease.",
+        "English": "Upload a Cowpea leaf image below to detect possible disease.",
         "Hausa": "Loda hoton ganye a ƙasa don gano yiwuwar cuta.",
         "Yoruba": "Dakun safihan aworan ewe si isalẹ lati ri àìsàn tó le wáyé."
     },
@@ -80,6 +81,27 @@ translations = {
         "Hausa": "Amincewa",
         "Yoruba": "Ìgboyà"
     },
+    "about": {
+        "English": "This system uses AI to detect diseases in cowpea and bean leaves. Upload an image to get a prediction.",
+        "Hausa": "Wannan tsarin yana amfani da AI don gano cututtukan ganyen wake da wake. Loda hoto don samun hasashe.",
+        "Yoruba": "Eto yi n lo AI lati mọ àìsàn ninu ewe èwà ati ewe èpà. Safihan aworan lati gba ìtẹnumọ."
+    }
+}
+
+# Treatment class mapping (same as original)
+treatment_mapping = {
+    'Bean Fresh Leaf': 'treatment_healthy',
+    'Cowpea Fresh Leaf': 'treatment_healthy',
+    'Bean Blight': 'treatment_cercospora',
+    'Cowpea Mosaic viroria leaf spot': 'treatment_cercospora',
+    'Bean Rust': 'treatment_rust',
+    'Cowpea Bacterial wilt': 'treatment_rust',
+    'Cowpea Septoria Leaf Spot': 'treatment_cercospora',
+    'Bean Mosaic Virus': 'treatment_other'
+}
+
+# Add extra translations for treatments (same as original)
+translations.update({
     "treatment_healthy": {
         "English": "The leaf appears healthy. No treatment is needed.",
         "Hausa": "Ganyen ya bayyana lafiyayye. Babu buƙatar magani.",
@@ -100,55 +122,77 @@ translations = {
         "Hausa": "Tuntuɓi jami'in wayar da kan manoma don tantancewa daidai.",
         "Yoruba": "Lo ri eleto idanmoran fun ise agbe fun ayewo finifini."
     }
-}
-
-# Treatment class mapping
-treatment_mapping = {
-    'Bean Fresh Leaf': 'treatment_healthy',
-    'Cowpea Fresh Leaf': 'treatment_healthy',
-    'Bean Blight': 'treatment_cercospora',
-    'Cowpea Mosaic viroria leaf spot': 'treatment_cercospora',
-    'Bean Rust': 'treatment_rust',
-    'Cowpea Bacterial wilt': 'treatment_rust',
-    'Cowpea Septoria Leaf Spot': 'treatment_cercospora',
-    'Bean Mosaic Virus': 'treatment_other'
-}
+})
 
 # Image transformation
 transform = transforms.Compose([
-    transforms.Resize((224, 224)),
+    transforms.Resize((100, 100)),
     transforms.ToTensor(),
     transforms.Normalize([0.485, 0.456, 0.406],
                          [0.229, 0.224, 0.225])
 ])
 
-# Streamlit interface
+# ✅ Add background styling
+st.markdown(
+    """
+    <style>
+    .stApp {
+        background-color: #26547C;
+        color: #fcfcfc;
+        font-family: 'Arial', sans-serif;
+    }
+    .stButton>button {
+        background-color: #4CAF50;
+        color: white;
+        border-radius: 10px;
+        padding: 10px;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
+
+# Streamlit UI
 st.title(translations["title"][language])
+st.write(translations["about"][language])
+st.write(" ")
 st.write(translations["upload_label"][language])
 
 uploaded_file = st.file_uploader("", type=["jpg", "jpeg", "png"])
 
 if uploaded_file is not None:
     image = Image.open(uploaded_file).convert("RGB")
-    st.subheader("📷 Uploaded Image")
-    st.image(image, caption="Preview", use_container_width=True)
+    col1, col2 = st.columns(2)
+    with col1:
+        st.subheader("📷 Uploaded Image")
+        st.image(image, caption="Preview", use_container_width=True)
 
     img_tensor = transform(image).unsqueeze(0).to(device)
 
-    if st.button(translations["button"][language]):
-        with torch.no_grad():
-            outputs = model(img_tensor)
-            probabilities = F.softmax(outputs, dim=1).cpu().numpy()[0]
-            predicted_idx = np.argmax(probabilities)
-            predicted_class = class_names[predicted_idx]
-            confidence = probabilities[predicted_idx] * 100
+    with col2:
+        if st.button(translations["button"][language]):
+            with st.spinner("Analyzing image..."):
+                with torch.no_grad():
+                    outputs = model(img_tensor)
+                    probabilities = F.softmax(outputs, dim=1).cpu().numpy()[0]
+                    predicted_idx = np.argmax(probabilities)
+                    predicted_class = class_names[predicted_idx]
+                    confidence = probabilities[predicted_idx] * 100
 
-            st.success(f"{translations['prediction'][language]}: **{predicted_class}**")
-            st.info(f"{translations['confidence'][language]}: {confidence:.2f}%")
+                st.success(f"{translations['prediction'][language]}: **{predicted_class}**")
+                st.info(f"{translations['confidence'][language]}: {confidence:.2f}%")
 
-            treatment_key = treatment_mapping.get(predicted_class, 'treatment_other')
-            treatment = translations.get(treatment_key, {}).get(language, "No treatment info.")
+                treatment_key = treatment_mapping.get(predicted_class, 'treatment_other')
+                treatment = translations.get(treatment_key, {}).get(language, "No treatment info.")
+                st.warning(treatment)
 
-            st.warning(treatment)
-
-
+                # ✅ Download prediction as text file
+                report = f"""
+                {translations['prediction'][language]}: {predicted_class}
+                {translations['confidence'][language]}: {confidence:.2f}%
+                Treatment: {treatment}
+                """
+                buf = io.BytesIO()
+                buf.write(report.encode())
+                buf.seek(0)
+                st.download_button("Download Report", data=buf, file_name="prediction.txt", mime="text/plain")
