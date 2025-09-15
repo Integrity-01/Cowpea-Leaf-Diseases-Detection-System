@@ -122,6 +122,9 @@ transform = transforms.Compose([
                          [0.229, 0.224, 0.225])
 ])
 
+
+
+
 # Main app interface
 st.markdown(f"## {translations['title'][language]}")
 st.markdown("---")
